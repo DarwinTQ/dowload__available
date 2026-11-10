@@ -1,0 +1,260 @@
+{% extends "monitoreo/base.html" %}
+{% block titulo %}Configuración{% endblock %}
+{% block contenido %}
+<h1 class="h4 mb-3">Configuración</h1>
+
+<div class="row">
+  <div class="col-lg-7">
+    {% for grupo, valores in resumen.items %}
+    <div class="tarjeta">
+      <h2 class="tarjeta__titulo">{{ grupo }}</h2>
+      <table class="table table-sm mb-0">
+        {% for clave, valor in valores.items %}
+        <tr><th>{{ clave }}</th><td>{{ valor }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="col-lg-5">
+    <div class="tarjeta">
+      <h2 class="tarjeta__titulo"><i class="bi bi-robot"></i> Bot de Telegram</h2>
+      <table class="table table-sm mb-0">
+        <tr><th>Estado</th><td>{% if estado_bot.conectado %}<i class="bi bi-check-circle-fill"></i> Activo{% else %}<i class="bi bi-x-circle"></i> Inactivo{% endif %}</td></tr>
+        <tr><th>Usuario</th><td>{% if estado_bot.usuario_bot %}@{{ estado_bot.usuario_bot }}{% else %}—{% endif %}</td></tr>
+        <tr><th>Último update recibido</th><td>{{ estado_bot.ultimo_update|date:"d/m/Y H:i:s"|default:"—" }}</td></tr>
+        <tr><th>Comandos atendidos hoy</th><td>{{ estado_bot.comandos_hoy }}</td></tr>
+      </table>
+    </div>
+
+    <div class="tarjeta">
+      <h2 class="tarjeta__titulo"><i class="bi bi-broadcast"></i> Puente MQTT y stream</h2>
+      <table class="table table-sm mb-2">
+        <tr>
+          <th>Broker</th>
+          <td>
+            {% if mqtt.conectado %}<i class="bi bi-check-circle-fill"></i> Conectado{% else %}<i class="bi bi-x-circle"></i> Sin conexión{% endif %}
+            · {{ mqtt.host }}:{{ mqtt.puerto }}
+          </td>
+        </tr>
+        <tr><th>Mensajes recibidos</th><td>{{ mqtt.recibidos }} ({{ mqtt.invalidos }} inválidos)</td></tr>
+        <tr><th>Publicados / reconexiones</th><td>{{ mqtt.publicados }} / {{ mqtt.reconexiones }}</td></tr>
+      </table>
+      {% if streams %}
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Cámara</th><th>Stream</th><th>Cuadros en buffer</th></tr></thead>
+        <tbody>
+          {% for stream in streams %}
+          <tr>
+            <td>{{ stream.codigo }}</td>
+            <td>{% if stream.conectado %}<i class="bi bi-check-circle-fill"></i> activo{% else %}<i class="bi bi-x-circle"></i> caído{% endif %}</td>
+            <td>{{ stream.cuadros_buffer }} ({{ stream.ventana_ms }} ms)</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-muted small mb-0">
+        Sin stream MJPEG configurado: el pipeline pide fotos a <code>/capture</code>.
+        Define <code>ESP32CAM_STREAM_URLS</code> en <code>.env</code>.
+      </p>
+      {% endif %}
+    </div>
+
+    <div class="tarjeta">
+      <h2 class="tarjeta__titulo"><i class="bi bi-camera-reels"></i> Comandos de la cámara</h2>
+      <p class="text-muted small">Se publican en <code>ucsm/v1/&lt;codigo&gt;/cam/cmd</code>.</p>
+      <div class="row g-2 mb-2">
+        <div class="col-6">
+          <input type="text" id="cam-codigo" class="form-control form-control-sm"
+                 placeholder="Código (ej. NODO-01)" value="{{ primer_dispositivo }}">
+        </div>
+        <div class="col-6">
+          <select id="cam-resolucion" class="form-select form-select-sm">
+            <option value="">Resolución (sin cambio)</option>
+            <option value="QVGA">QVGA</option>
+            <option value="VGA">VGA</option>
+            <option value="SVGA">SVGA</option>
+            <option value="XGA">XGA</option>
+            <option value="HD">HD</option>
+          </select>
+        </div>
+        <div class="col-6">
+          <input type="number" id="cam-calidad" class="form-control form-control-sm"
+                 min="10" max="63" placeholder="Calidad 10-63">
+        </div>
+        <div class="col-6">
+          <input type="number" id="cam-fps" class="form-control form-control-sm"
+                 min="1" max="30" placeholder="fps_max">
+        </div>
+        <div class="col-12">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="cam-flash">
+            <label class="form-check-label small" for="cam-flash">Flash permanente</label>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-verde btn-sm" id="boton-cam-cmd">Enviar a la cámara</button>
+      <div id="resultado-cam-cmd" class="small mt-2"></div>
+    </div>
+
+    <div class="tarjeta">
+      <h2 class="tarjeta__titulo"><i class="bi bi-cpu"></i> Comandos del nodo</h2>
+      <p class="text-muted small">Se publican en <code>ucsm/v1/&lt;codigo&gt;/cmd</code>.</p>
+      <div class="d-flex flex-wrap gap-2 mb-2">
+        {% for dispositivo in dispositivos %}
+        <div class="w-100 border-bottom pb-2 mb-1" data-nodo-id="{{ dispositivo.pk }}">
+          <strong>{{ dispositivo.codigo }}</strong>
+          <div class="d-flex flex-wrap gap-1 mt-1">
+            <button class="btn btn-sm btn-verde-contorno boton-nodo-cmd" data-accion="recalibrar_piso">
+              Recalibrar piso de ruido
+            </button>
+            <button class="btn btn-sm btn-verde-contorno boton-nodo-cmd" data-accion="forzar_modo" data-modo="ESTACIONADO">
+              Forzar ESTACIONADO
+            </button>
+            <button class="btn btn-sm btn-verde-contorno boton-nodo-cmd" data-accion="forzar_modo" data-modo="EN_MARCHA">
+              Forzar EN MARCHA
+            </button>
+            <button class="btn btn-sm btn-outline-danger boton-nodo-cmd" data-accion="reiniciar">
+              Reiniciar nodo
+            </button>
+          </div>
+        </div>
+        {% empty %}
+        <p class="text-muted small mb-0">No hay dispositivos registrados.</p>
+        {% endfor %}
+      </div>
+      <div id="resultado-nodo-cmd" class="small"></div>
+    </div>
+
+    <div class="tarjeta">
+      <h2 class="tarjeta__titulo"><i class="bi bi-telegram"></i> Probar Telegram</h2>
+      <div class="input-group mb-2">
+        <input type="text" id="campo-chat-id" class="form-control" placeholder="chat_id">
+        <button class="btn btn-verde" id="boton-probar-telegram">Enviar prueba</button>
+      </div>
+      <div id="resultado-telegram" class="small"></div>
+    </div>
+
+    <div class="tarjeta">
+      <h2 class="tarjeta__titulo"><i class="bi bi-camera"></i> Probar cámara</h2>
+      <div class="input-group mb-2">
+        <input type="text" id="campo-codigo-camara" class="form-control" placeholder="Código del dispositivo (ej. NODO-01)">
+        <button class="btn btn-verde" id="boton-probar-camara">Capturar</button>
+      </div>
+      <div id="resultado-camara"></div>
+    </div>
+
+    <div class="tarjeta">
+      <h2 class="tarjeta__titulo"><i class="bi bi-eye"></i> Probar YOLO</h2>
+      <form id="form-probar-yolo" class="mb-2">
+        <input type="file" id="campo-imagen-yolo" accept="image/*" class="form-control mb-2">
+        <button type="submit" class="btn btn-verde">Analizar imagen</button>
+      </form>
+      <div id="resultado-yolo"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const csrftoken = window.obtenerCookie("csrftoken");
+
+  document.getElementById("boton-probar-telegram").addEventListener("click", async function () {
+    const chatId = document.getElementById("campo-chat-id").value;
+    const resultado = document.getElementById("resultado-telegram");
+    resultado.textContent = "Enviando…";
+    const resp = await fetch("{% url 'monitoreo:configuracion_probar_telegram' %}", {
+      method: "POST", headers: { "X-CSRFToken": csrftoken, "Content-Type": "application/x-www-form-urlencoded" },
+      body: "chat_id=" + encodeURIComponent(chatId),
+    });
+    const datos = await resp.json();
+    resultado.textContent = datos.ok ? "Mensaje enviado correctamente." : ("Error: " + (datos.error || "desconocido"));
+  });
+
+  document.getElementById("boton-probar-camara").addEventListener("click", async function () {
+    const codigo = document.getElementById("campo-codigo-camara").value;
+    const resultado = document.getElementById("resultado-camara");
+    resultado.textContent = "Capturando…";
+    const resp = await fetch("{% url 'monitoreo:configuracion_probar_camara' %}", {
+      method: "POST", headers: { "X-CSRFToken": csrftoken, "Content-Type": "application/x-www-form-urlencoded" },
+      body: "codigo=" + encodeURIComponent(codigo),
+    });
+    const datos = await resp.json();
+    resultado.innerHTML = datos.ok
+      ? `<img src="data:image/jpeg;base64,${datos.imagen_base64}" class="img-fluid rounded">`
+      : `<span class="text-danger">Error: ${datos.error}</span>`;
+  });
+
+  /** Publica cam/cmd con lo que el usuario haya rellenado (los vacíos se omiten). */
+  document.getElementById("boton-cam-cmd").addEventListener("click", async function () {
+    const codigo = document.getElementById("cam-codigo").value.trim();
+    const resultado = document.getElementById("resultado-cam-cmd");
+    if (!codigo) { resultado.textContent = "Indica el código del dispositivo."; return; }
+
+    const cuerpo = { flash: document.getElementById("cam-flash").checked };
+    const resolucion = document.getElementById("cam-resolucion").value;
+    const calidad = document.getElementById("cam-calidad").value;
+    const fps = document.getElementById("cam-fps").value;
+    if (resolucion) cuerpo.resolucion = resolucion;
+    if (calidad) cuerpo.calidad = Number(calidad);
+    if (fps) cuerpo.fps_max = Number(fps);
+
+    resultado.textContent = "Publicando…";
+    const resp = await fetch(`/api/v1/panel/camara/${encodeURIComponent(codigo)}/comando/`, {
+      method: "POST",
+      headers: { "X-CSRFToken": csrftoken, "Content-Type": "application/json" },
+      body: JSON.stringify(cuerpo),
+    });
+    const datos = await resp.json();
+    resultado.innerHTML = datos.ok
+      ? `<span class="text-success">Enviado: ${JSON.stringify(datos.enviado)}</span>`
+      : `<span class="text-danger">${datos.error}</span>`;
+  });
+
+  /** Publica cmd al nodo (recalibrar_piso, forzar_modo, reiniciar). */
+  document.querySelectorAll(".boton-nodo-cmd").forEach(function (boton) {
+    boton.addEventListener("click", async function () {
+      const contenedor = boton.closest("[data-nodo-id]");
+      const resultado = document.getElementById("resultado-nodo-cmd");
+      const accion = boton.dataset.accion;
+      if (accion === "reiniciar" && !confirm("¿Reiniciar el nodo? Se quedará unos segundos sin reportar.")) return;
+
+      const cuerpo = { accion };
+      if (boton.dataset.modo) cuerpo.modo = boton.dataset.modo;
+
+      resultado.textContent = "Publicando…";
+      const resp = await fetch(`/api/v1/panel/dispositivos/${contenedor.dataset.nodoId}/comando/`, {
+        method: "POST",
+        headers: { "X-CSRFToken": csrftoken, "Content-Type": "application/json" },
+        body: JSON.stringify(cuerpo),
+      });
+      const datos = await resp.json();
+      resultado.innerHTML = datos.ok
+        ? `<span class="text-success">${datos.codigo}: ${datos.accion} enviado.</span>`
+        : `<span class="text-danger">${datos.error}</span>`;
+    });
+  });
+
+  document.getElementById("form-probar-yolo").addEventListener("submit", async function (evento) {
+    evento.preventDefault();
+    const archivo = document.getElementById("campo-imagen-yolo").files[0];
+    const resultado = document.getElementById("resultado-yolo");
+    if (!archivo) return;
+    resultado.textContent = "Analizando…";
+    const formData = new FormData();
+    formData.append("imagen", archivo);
+    const resp = await fetch("{% url 'monitoreo:configuracion_probar_yolo' %}", {
+      method: "POST", headers: { "X-CSRFToken": csrftoken }, body: formData,
+    });
+    const datos = await resp.json();
+    if (!datos.ok) { resultado.innerHTML = `<span class="text-danger">${datos.error}</span>`; return; }
+    resultado.innerHTML = `
+      <p>Tiempo de inferencia: ${datos.tiempo_inferencia_ms} ms · Detecciones: ${datos.num_detecciones} · ¿Generaría alerta? ${datos.hay_alerta ? "Sí" : "No"}</p>
+      <p class="small text-muted">Clases: ${datos.clases}${datos.tipo_evento ? ` · tipo de evento: <strong>${datos.tipo_evento}</strong>` : ""}</p>
+      ${datos.imagen_anotada_base64 ? `<img src="data:image/jpeg;base64,${datos.imagen_anotada_base64}" class="img-fluid rounded">` : ""}`;
+  });
+</script>
+{% endblock %}
